@@ -44,4 +44,60 @@ const me = asyncHandler(async (req, res) => {
   return new ApiResponse(200, req.user, 'Data user berhasil diambil').send(res);
 });
 
-module.exports = { register, login, refresh, logout, me };
+/* --- Email verification --- */
+
+const sendVerificationEmail = asyncHandler(async (req, res) => {
+  await authService.sendVerificationCode(req.body.email);
+  return new ApiResponse(200, null, 'Kode verifikasi telah dikirim ke email kamu').send(res);
+});
+
+const confirmVerificationEmail = asyncHandler(async (req, res) => {
+  await authService.confirmVerificationCode(req.body.email, req.body.code);
+  return new ApiResponse(200, null, 'Email berhasil diverifikasi').send(res);
+});
+
+/* --- Forgot password --- */
+
+const forgotPassword = asyncHandler(async (req, res) => {
+  await authService.forgotPassword(req.body.email);
+  // Response SELALU generic, terlepas dari email ada atau tidak di DB
+  return new ApiResponse(200, null, 'Jika email terdaftar, kode reset password telah dikirim').send(
+    res
+  );
+});
+
+const verifyResetCode = asyncHandler(async (req, res) => {
+  const result = await authService.verifyResetCode(req.body.email, req.body.code);
+  return new ApiResponse(200, result, 'Kode terverifikasi').send(res);
+});
+
+const resetPassword = asyncHandler(async (req, res) => {
+  // req.resetUser diisi oleh middleware verifyResetToken
+  await authService.resetPassword(req.resetUser, req.body.newPassword);
+  return new ApiResponse(200, null, 'Password berhasil direset, silakan login ulang').send(res);
+});
+
+/* --- Change password (protected) --- */
+
+const changePassword = asyncHandler(async (req, res) => {
+  await authService.changePassword(req.user._id, req.body.oldPassword, req.body.newPassword);
+  return new ApiResponse(
+    200,
+    null,
+    'Password berhasil diubah, silakan login ulang di device lain'
+  ).send(res);
+});
+
+module.exports = {
+  register,
+  login,
+  refresh,
+  logout,
+  me,
+  sendVerificationEmail,
+  confirmVerificationEmail,
+  forgotPassword,
+  verifyResetCode,
+  resetPassword,
+  changePassword,
+};

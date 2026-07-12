@@ -21,4 +21,60 @@ const refresh = {
   }),
 };
 
-module.exports = { register, login, refresh };
+const otpCode = Joi.string()
+  .pattern(/^\d{4,8}$/)
+  .message('Kode harus berupa angka');
+
+const sendVerificationEmail = {
+  body: Joi.object({
+    email: Joi.string().email().required(),
+  }),
+};
+
+const confirmVerificationEmail = {
+  body: Joi.object({
+    email: Joi.string().email().required(),
+    code: otpCode.required(),
+  }),
+};
+
+const forgotPassword = {
+  body: Joi.object({
+    email: Joi.string().email().required(),
+  }),
+};
+
+const verifyResetCode = {
+  body: Joi.object({
+    email: Joi.string().email().required(),
+    code: otpCode.required(),
+  }),
+};
+
+const resetPassword = {
+  body: Joi.object({
+    resetToken: Joi.string().required(),
+    newPassword: Joi.string().min(8).required(),
+  }),
+};
+
+const changePassword = {
+  body: Joi.object({
+    oldPassword: Joi.string().required(),
+    newPassword: Joi.string().min(8).required().invalid(Joi.ref('oldPassword')).messages({
+      'any.invalid': 'Password baru tidak boleh sama dengan password lama',
+    }),
+  }),
+};
+
+module.exports = {
+  register,
+  login,
+  refresh,
+  sendVerificationEmail,
+  confirmVerificationEmail,
+  forgotPassword,
+  verifyResetCode,
+  resetPassword,
+  changePassword,
+};
