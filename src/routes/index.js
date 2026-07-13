@@ -1,6 +1,7 @@
 const express = require('express');
 const authRoutes = require('./auth.routes');
 const menuRoutes = require('./menu.routes');
+const inventoryRoutes = require('./inventory.routes');
 
 const router = express.Router();
 
@@ -8,6 +9,7 @@ const router = express.Router();
 // misal: router.use('/products', productRoutes);
 router.use('/auth', authRoutes);
 router.use('/menu', menuRoutes);
+router.use('/inventory', inventoryRoutes);
 
 router.get('/health', (req, res) => res.status(200).json({ success: true, message: 'OK' }));
 
