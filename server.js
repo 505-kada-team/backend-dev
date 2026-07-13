@@ -5,6 +5,11 @@ const logger = require('./src/utils/logger');
 
 let server;
 
+// const inventoryRoutes = require("./routes/inventory.routes");
+
+// app.use("/api/inventory", inventoryRoutes);
+
+
 const start = async () => {
   await connectDB();
   server = app.listen(port, () => {
