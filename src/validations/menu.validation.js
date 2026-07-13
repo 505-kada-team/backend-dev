@@ -2,19 +2,19 @@ const Joi = require('joi');
 
 const objectId = (value, helpers) => {
   if (!value.match(/^[0-9a-fA-F]{24}$/)) {
-    return helpers.message('"{{#label}}" tidak valid, harus berupa ObjectId MongoDB');
+    return helpers.message('"{{#label}}" is invalid. It must be a valid MongoDB ObjectId');
   }
   return value;
 };
 
 const ingredientItem = Joi.object({
   inventoryId: Joi.string().custom(objectId).required().messages({
-    'any.required': 'inventoryId wajib diisi',
-    'string.pattern.base': 'inventoryId tidak valid',
+    'any.required': 'inventoryId is required',
+    'string.pattern.base': 'inventoryId is invalid',
   }),
-  kuantitasDibutuhkan: Joi.number().positive().required().messages({
-    'number.positive': 'kuantitasDibutuhkan harus lebih besar dari 0',
-    'any.required': 'kuantitasDibutuhkan wajib diisi',
+  quantityNeeded: Joi.number().positive().required().messages({
+    'number.positive': 'quantityNeeded must be greater than 0',
+    'any.required': 'quantityNeeded is required',
   }),
 });
 
@@ -24,8 +24,8 @@ const createMenu = {
     description: Joi.string().trim().max(500).allow('', null),
     sellingPrice: Joi.number().min(0).required(),
     ingredients: Joi.array().items(ingredientItem).min(1).required().messages({
-      'array.min': 'Menu harus memiliki minimal 1 ingredient',
-      'any.required': 'ingredients wajib diisi',
+      'array.min': 'Menu must contain at least 1 ingredient',
+      'any.required': 'ingredients is required',
     }),
   }),
 };
@@ -41,9 +41,9 @@ const updateMenu = {
       sellingPrice: Joi.number().min(0),
       ingredients: Joi.array().items(ingredientItem).min(1),
     })
-    .min(1) // minimal 1 field yang mau diupdate, tolak body kosong
+    .min(1)
     .messages({
-      'object.min': 'Minimal 1 field harus diisi untuk update',
+      'object.min': 'At least 1 field is required for update',
     }),
 };
 
