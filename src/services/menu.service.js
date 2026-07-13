@@ -10,13 +10,13 @@ const ApiError = require('../utils/ApiError');
  */
 const buildMenuResponse = (menu, ingredients) => {
   const mappedIngredients = ingredients.map((ing) => {
-    const hargaPokokPerBahan = ing.kuantitasDibutuhkan * ing.inventoryId.hargaPokok;
+    const hargaPokokPerBahan = ing.quantityNeeded * ing.inventoryId.hargaPokok;
     return {
       id: ing._id,
       inventoryId: ing.inventoryId._id,
       nameBahan: ing.inventoryId.nameBahan,
       satuan: ing.inventoryId.satuan,
-      kuantitasDibutuhkan: ing.kuantitasDibutuhkan,
+      quantityNeeded: ing.quantityNeeded,
       hargaPokokPerBahan,
     };
   });
@@ -45,7 +45,7 @@ const validateIngredientsOwnership = async (ingredients, userId) => {
 
   const hasDuplicate = new Set(ids).size !== ids.length;
   if (hasDuplicate) {
-    throw new ApiError(400, 'Terdapat inventoryId duplikat dalam ingredients');
+    throw new ApiError(400, 'Duplicate inventoryId found in ingredients');
   }
 
   const foundInventories = await Inventory.find({ _id: { $in: ids }, userId });
@@ -55,7 +55,7 @@ const validateIngredientsOwnership = async (ingredients, userId) => {
     const missingIds = ids.filter((id) => !foundIds.includes(id));
     throw new ApiError(
       400,
-      `Bahan berikut tidak ditemukan di inventory Anda: ${missingIds.join(', ')}`
+      `The following ingredients were not found in your inventory: ${missingIds.join(', ')}`
     );
   }
 };
@@ -80,7 +80,7 @@ const getAllMenus = async (userId) => {
 const getMenuById = async (menuId, userId) => {
   const menu = await Menu.findOne({ _id: menuId, userId });
   if (!menu) {
-    throw new ApiError(404, 'Menu tidak ditemukan');
+    throw new ApiError(404, 'Menu not found');
   }
 
   const ingredients = await MenuIngredient.find({ menuId }).populate('inventoryId');
@@ -89,6 +89,16 @@ const getMenuById = async (menuId, userId) => {
 
 const createMenu = async ({ name, description, sellingPrice, ingredients }, userId) => {
   await validateIngredientsOwnership(ingredients, userId);
+
+  const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const existingMenu = await Menu.findOne({
+    userId,
+    name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' },
+  });
+  if (existingMenu) {
+    throw new Error('Menu with this name already exists');
+  }
 
   // Pakai transaction supaya Menu + MenuIngredient sama-sama tersimpan atau sama-sama gagal.
   // Tanpa ini, kalau insert MenuIngredient gagal di tengah jalan, akan ada Menu "yatim"
@@ -102,7 +112,7 @@ const createMenu = async ({ name, description, sellingPrice, ingredients }, user
       const ingredientDocs = ingredients.map((ing) => ({
         menuId: menu._id,
         inventoryId: ing.inventoryId,
-        kuantitasDibutuhkan: ing.kuantitasDibutuhkan,
+        quantityNeeded: ing.quantityNeeded,
       }));
       const createdIngredients = await MenuIngredient.insertMany(ingredientDocs, { session });
 
@@ -120,7 +130,7 @@ const createMenu = async ({ name, description, sellingPrice, ingredients }, user
 const updateMenu = async (menuId, payload, userId) => {
   const menu = await Menu.findOne({ _id: menuId, userId });
   if (!menu) {
-    throw new ApiError(404, 'Menu tidak ditemukan');
+    throw new ApiError(404, 'Menu not found');
   }
 
   const { name, description, sellingPrice, ingredients } = payload;
@@ -147,7 +157,7 @@ const updateMenu = async (menuId, payload, userId) => {
         const ingredientDocs = ingredients.map((ing) => ({
           menuId: menu._id,
           inventoryId: ing.inventoryId,
-          kuantitasDibutuhkan: ing.kuantitasDibutuhkan,
+          quantityNeeded: ing.quantityNeeded,
         }));
         const createdIngredients = await MenuIngredient.insertMany(ingredientDocs, { session });
         finalIngredients = await MenuIngredient.populate(createdIngredients, {
@@ -168,7 +178,7 @@ const updateMenu = async (menuId, payload, userId) => {
 const deleteMenu = async (menuId, userId) => {
   const menu = await Menu.findOne({ _id: menuId, userId });
   if (!menu) {
-    throw new ApiError(404, 'Menu tidak ditemukan');
+    throw new ApiError(404, 'Menu not found');
   }
 
   // Guard: tolak hapus kalau menu ini masih dipakai di Planning manapun.
@@ -179,7 +189,10 @@ const deleteMenu = async (menuId, userId) => {
   if (PlanningItem) {
     const usedInPlanning = await PlanningItem.exists({ menuId });
     if (usedInPlanning) {
-      throw new ApiError(409, 'Menu tidak bisa dihapus karena masih dipakai di planning aktif');
+      throw new ApiError(
+        409,
+        'Menu cannot be deleted because it is still used in an active planning'
+      );
     }
   }
 
