@@ -7,8 +7,13 @@ const inventoryValidation = require("../validations/inventory.validation");
 
 const router = express.Router();
 
-// Get all inventories
-router.get("/", authenticate, getAllInventory);
+
+router.get(
+    "/",
+    authenticate,
+    validate(inventoryValidation.getAllInventory),
+    getAllInventory
+);
 
 // Get inventory options
 router.get("/options", authenticate, getInventoryOptions);

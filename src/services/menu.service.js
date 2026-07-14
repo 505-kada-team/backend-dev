@@ -3,6 +3,7 @@ const Menu = require('../models/menu.model');
 const MenuIngredient = require('../models/menuIngredient.model');
 const Inventory = require('../models/inventory.model');
 const ApiError = require('../utils/ApiError');
+const paginate = require('../utils/paginate');
 
 /**
  * Helper internal: gabungkan 1 dokumen Menu + ingredient-nya (sudah di-populate Inventory)
@@ -60,21 +61,60 @@ const validateIngredientsOwnership = async (ingredients, userId) => {
   }
 };
 
-const getAllMenus = async (userId) => {
-  const menus = await Menu.find({ userId }).sort({ createdAt: -1 });
+// const getAllMenus = async (userId) => {
+//   const menus = await Menu.find({ userId }).sort({ createdAt: -1 });
 
-  // Ambil semua ingredient untuk semua menu sekaligus (hindari N+1 query per menu)
-  const menuIds = menus.map((m) => m._id);
-  const allIngredients = await MenuIngredient.find({ menuId: { $in: menuIds } }).populate(
-    'inventoryId'
+//   // Ambil semua ingredient untuk semua menu sekaligus (hindari N+1 query per menu)
+//   const menuIds = menus.map((m) => m._id);
+//   const allIngredients = await MenuIngredient.find({ menuId: { $in: menuIds } }).populate(
+//     'inventoryId'
+//   );
+
+//   return menus.map((menu) => {
+//     const ingredientsForThisMenu = allIngredients.filter(
+//       (ing) => ing.menuId.toString() === menu._id.toString()
+//     );
+//     return buildMenuResponse(menu, ingredientsForThisMenu);
+//   });
+// };
+
+const getAllMenus = async (userId, query) => {
+  const { data: menus, meta } = await paginate(
+    Menu,
+    { userId },
+    query,
+    {
+      searchableFields: ['name', 'description'],
+      defaultSort: '-createdAt',
+      defaultLimit: 10,
+    }
   );
 
-  return menus.map((menu) => {
+  if (menus.length === 0) {
+    return {
+      data: [],
+      meta,
+    };
+  }
+
+  const menuIds = menus.map((m) => m._id);
+
+  const allIngredients = await MenuIngredient.find({
+    menuId: { $in: menuIds },
+  }).populate('inventoryId');
+
+  const result = menus.map((menu) => {
     const ingredientsForThisMenu = allIngredients.filter(
       (ing) => ing.menuId.toString() === menu._id.toString()
     );
+
     return buildMenuResponse(menu, ingredientsForThisMenu);
   });
+
+  return {
+    data: result,
+    meta,
+  };
 };
 
 const getMenuById = async (menuId, userId) => {

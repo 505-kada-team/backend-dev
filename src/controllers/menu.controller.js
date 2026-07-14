@@ -3,8 +3,8 @@ const ApiResponse = require('../utils/ApiResponse');
 const menuService = require('../services/menu.service');
 
 const getMenu = asyncHandler(async (req, res) => {
-  const menus = await menuService.getAllMenus(req.user._id);
-  return new ApiResponse(200, menus, 'Menu list retrieved successfully').send(res);
+    const menus = await menuService.getAllMenus(req.user._id, req.query
+);  return new ApiResponse(200, menus, 'Menu list retrieved successfully').send(res);
 });
 
 const getMenuById = asyncHandler(async (req, res) => {

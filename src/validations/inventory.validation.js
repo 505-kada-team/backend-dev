@@ -2,9 +2,27 @@ const Joi = require("joi");
 
 const validUnits = ["gram", "kg", "ml", "liter", "pcs", "piece"];
 
+const getAllInventory = {
+  query: Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+
+    limit: Joi.number()
+      .integer()
+      .min(1)
+      .max(100)
+      .default(10),
+
+    search: Joi.string().allow(""),
+
+    sort: Joi.string(),
+  }),
+};
+
 const createInventory = {
   body: Joi.object({
     ingredientName: Joi.string().trim().min(2).max(100).required(),
+
+    description: Joi.string().trim().max(500).allow("").optional(),
 
     unit: Joi.string()
       .valid(...validUnits)
@@ -37,6 +55,8 @@ const updateInventory = {
   body: Joi.object({
     ingredientName: Joi.string().trim().min(2).max(100),
 
+    description: Joi.string().trim().max(500).allow(""),
+
     unit: Joi.string().valid(...validUnits),
 
     quantity: Joi.number().min(0),
@@ -60,6 +80,7 @@ const inventoryId = {
 };
 
 module.exports = {
+  getAllInventory,
   createInventory,
   updateInventory,
   inventoryId,
