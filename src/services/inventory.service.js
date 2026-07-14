@@ -1,9 +1,20 @@
+const paginate = require("../utils/paginate");
 const Inventory = require("../models/inventory.model");
 const ApiError = require("../utils/ApiError");
 
-const getAllInventory = async (userId) => {
-    return await Inventory.find({ userId }).sort({ createdAt: -1 });
+const getAllInventory = async (userId, query) => {
+    return await paginate(
+        Inventory,
+        { userId },
+        query,
+        {
+            searchableFields: ["ingredientName"],
+            defaultSort: "-createdAt",
+            defaultLimit: 10,
+        }
+    );
 };
+// =======
 
 const getInventoryById = async (inventoryId, userId) => {
     const inventory = await Inventory.findOne({

@@ -3,7 +3,10 @@ const ApiResponse = require("../utils/ApiResponse");
 const inventoryService = require("../services/inventory.service");
 
 const getAllInventory = asyncHandler(async (req, res) => {
-    const data = await inventoryService.getAllInventory(req.user._id);
+    const data = await inventoryService.getAllInventory(
+        req.user._id,
+        req.query
+    );
 
     return new ApiResponse(
         200,
