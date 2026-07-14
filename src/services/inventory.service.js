@@ -32,6 +32,7 @@ const getInventoryById = async (inventoryId, userId) => {
 const createInventory = async (userId, payload) => {
     const {
         ingredientName,
+        description,
         unit,
         quantity,
         unitCost,
@@ -54,6 +55,7 @@ const createInventory = async (userId, payload) => {
     const inventory = await Inventory.create({
         userId,
         ingredientName,
+        description,
         unit,
         quantity,
         unitCost,

@@ -22,6 +22,8 @@ const createInventory = {
   body: Joi.object({
     ingredientName: Joi.string().trim().min(2).max(100).required(),
 
+    description: Joi.string().trim().max(500).allow("").optional(),
+
     unit: Joi.string()
       .valid(...validUnits)
       .required(),
@@ -52,6 +54,8 @@ const updateInventory = {
 
   body: Joi.object({
     ingredientName: Joi.string().trim().min(2).max(100),
+
+    description: Joi.string().trim().max(500).allow(""),
 
     unit: Joi.string().valid(...validUnits),
 

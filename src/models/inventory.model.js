@@ -13,6 +13,12 @@ const inventorySchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    description: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: "",
+    },
     unit: {
       type: String,
       required: true,
