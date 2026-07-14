@@ -10,26 +10,26 @@ const ApiError = require('../utils/ApiError');
  */
 const buildMenuResponse = (menu, ingredients) => {
   const mappedIngredients = ingredients.map((ing) => {
-    const hargaPokokPerBahan = ing.quantityNeeded * ing.inventoryId.hargaPokok;
+    const costPerIngredient = ing.quantityNeeded * ing.inventoryId.unitCost;
     return {
       id: ing._id,
       inventoryId: ing.inventoryId._id,
-      nameBahan: ing.inventoryId.nameBahan,
-      satuan: ing.inventoryId.satuan,
+      ingredientName: ing.inventoryId.ingredientName,
+      unit: ing.inventoryId.unit,
       quantityNeeded: ing.quantityNeeded,
-      hargaPokokPerBahan,
+      costPerIngredient,
     };
   });
 
-  const hargaPokok = mappedIngredients.reduce((sum, i) => sum + i.hargaPokokPerBahan, 0);
+  const costPrice = mappedIngredients.reduce((sum, i) => sum + i.costPerIngredient, 0);
 
   return {
     id: menu._id,
     name: menu.name,
     description: menu.description,
-    sellingPrice: menu.sellingPrice, // harga jual milik Menu sendiri, tidak berhubungan dengan Inventory
-    hargaPokok,
-    laba: menu.sellingPrice - hargaPokok,
+    sellingPrice: menu.sellingPrice,
+    costPrice,
+    profit: menu.sellingPrice - costPrice,
     ingredients: mappedIngredients,
   };
 };
