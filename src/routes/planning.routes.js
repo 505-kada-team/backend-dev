@@ -1,22 +1,39 @@
-const express = require('express');
-const controller = require('../controllers/planning.controller');
-const { protect } = require('../middleware/auth');
+const express = require("express");
 
 const router = express.Router();
 
-router.use(protect); // semua route planning wajib login
+const planningController = require("../controllers/planning.controller");
 
-router
-  .route('/')
-  .get(controller.getAll)
-  .post(controller.create);
+const { authenticate } = require("../middlewares/auth.middleware");
+const validate = require("../middlewares/validate.middleware");
 
-router
-  .route('/:id')
-  .get(controller.getById)
-  .put(controller.update)
-  .delete(controller.remove);
+const planningValidation = require("../validations/planning.validation");
 
-router.patch('/:id/set-final', controller.setFinal);
+router.post(
+    "/",
+    authenticate,
+    validate(planningValidation.createPlanning),
+    planningController.createPlanning
+);
+
+router.get(
+    "/",
+    authenticate,
+    planningController.getAllPlanning
+);
+
+router.get(
+    "/:id",
+    authenticate,
+    validate(planningValidation.planningId),
+    planningController.getPlanningDetail
+);
+
+router.delete(
+    "/:id",
+    authenticate,
+    validate(planningValidation.planningId),
+    planningController.deletePlanning
+);
 
 module.exports = router;
