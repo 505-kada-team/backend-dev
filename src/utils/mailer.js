@@ -7,6 +7,7 @@ const transporter = nodemailer.createTransport({
   host: smtp.host,
   port: smtp.port,
   secure: smtp.port === 465, // true untuk port 465, false untuk 587 (STARTTLS)
+  family: 4,
   auth: {
     user: smtp.user,
     pass: smtp.pass,
