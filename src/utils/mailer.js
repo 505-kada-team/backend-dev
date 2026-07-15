@@ -1,29 +1,24 @@
-const nodemailer = require('nodemailer');
-const { smtp } = require('../config/env');
+const { BrevoClient } = require('@getbrevo/brevo');
+const { brevo: brevoConfig } = require('../config/env');
 const logger = require('./logger');
 
-// Dibuat sekali (singleton transporter), bukan per-request, biar konek SMTP di-reuse
-const transporter = nodemailer.createTransport({
-  host: smtp.host,
-  port: smtp.port,
-  secure: smtp.port === 465, // true untuk port 465, false untuk 587 (STARTTLS)
-  family: 4,
-  auth: {
-    user: smtp.user,
-    pass: smtp.pass,
-  },
+// Dibuat sekali (singleton client), sama seperti transporter sebelumnya
+const brevo = new BrevoClient({
+  apiKey: brevoConfig.apiKey?.trim(),
 });
+
+console.log('DEBUG - API Key:', JSON.stringify(brevoConfig.apiKey));
 
 /**
  * Kirim email generik. Dipakai oleh service verify-email dan forgot-password.
  */
 const sendEmail = async ({ to, subject, html }) => {
   try {
-    await transporter.sendMail({
-      from: `"${smtp.fromName}" <${smtp.user}>`,
-      to,
+    await brevo.transactionalEmails.sendTransacEmail({
+      sender: { name: brevoConfig.fromName, email: brevoConfig.fromEmail },
+      to: [{ email: to }],
       subject,
-      html,
+      htmlContent: html,
     });
   } catch (err) {
     logger.error(`Gagal mengirim email ke ${to}: ${err.message}`);
