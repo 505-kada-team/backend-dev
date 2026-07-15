@@ -7,7 +7,11 @@ const brevo = new BrevoClient({
   apiKey: brevoConfig.apiKey?.trim(),
 });
 
-console.log('DEBUG - API Key:', JSON.stringify(brevoConfig.apiKey));
+// GANTI: jangan print API key mentah, cukup konfirmasi ke-load atau nggak
+console.log('DEBUG - API Key loaded:', !!brevoConfig.apiKey, 'length:', brevoConfig.apiKey?.length);
+
+// GANTI (baru): flag sandbox, dibaca dari env var
+const isSandbox = process.env.EMAIL_SANDBOX_MODE === 'true';
 
 /**
  * Kirim email generik. Dipakai oleh service verify-email dan forgot-password.
@@ -19,7 +23,13 @@ const sendEmail = async ({ to, subject, html }) => {
       to: [{ email: to }],
       subject,
       htmlContent: html,
+      // GANTI (baru): sandbox header ikut masuk body, bukan HTTP header
+      ...(isSandbox && { headers: { 'X-Sib-Sandbox': 'drop' } }),
     });
+
+    if (isSandbox) {
+      logger.info(`[SANDBOX] Email ke ${to} divalidasi, tidak benar-benar dikirim`);
+    }
   } catch (err) {
     logger.error(`Gagal mengirim email ke ${to}: ${err.message}`);
     // Sengaja tidak throw ApiError di sini, biar caller (service) yang putuskan
