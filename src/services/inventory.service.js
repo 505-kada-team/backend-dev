@@ -1,117 +1,109 @@
-const paginate = require("../utils/paginate");
-const Inventory = require("../models/inventory.model");
-const ApiError = require("../utils/ApiError");
+const paginate = require('../utils/paginate');
+const Inventory = require('../models/inventory.model');
+const MenuIngredient = require('../models/menuIngredient.model');
+const ApiError = require('../utils/ApiError');
 
 const getAllInventory = async (userId, query) => {
-    return await paginate(
-        Inventory,
-        { userId },
-        query,
-        {
-            searchableFields: ["ingredientName"],
-            defaultSort: "-createdAt",
-            defaultLimit: 10,
-        }
-    );
+  return await paginate(Inventory, { userId }, query, {
+    searchableFields: ['ingredientName'],
+    defaultSort: '-createdAt',
+    defaultLimit: 10,
+  });
 };
-// =======
 
 const getInventoryById = async (inventoryId, userId) => {
-    const inventory = await Inventory.findOne({
-        _id: inventoryId,
-        userId,
-    });
+  const inventory = await Inventory.findOne({
+    _id: inventoryId,
+    userId,
+  });
 
-    if (!inventory) {
-        throw new ApiError(404, "Inventory not found");
-    }
+  if (!inventory) {
+    throw new ApiError(404, 'Inventory not found');
+  }
 
-    return inventory;
+  return inventory;
 };
 
 const createInventory = async (userId, payload) => {
-    const {
-        ingredientName,
-        description,
-        unit,
-        quantity,
-        unitCost,
-        validFrom,
-        validTo,
-    } = payload;
+  const { ingredientName, description, unit, quantity, unitCost, validFrom, validTo } = payload;
 
-    const existingInventory = await Inventory.findOne({
-        userId,
-        ingredientName,
-    });
+  const existingInventory = await Inventory.findOne({
+    userId,
+    ingredientName,
+  });
 
-    if (existingInventory) {
-        throw new ApiError(
-            409,
-            "Ingredient already exists in inventory"
-        );
-    }
+  if (existingInventory) {
+    throw new ApiError(409, 'Ingredient already exists in inventory');
+  }
 
-    const inventory = await Inventory.create({
-        userId,
-        ingredientName,
-        description,
-        unit,
-        quantity,
-        unitCost,
-        validFrom,
-        validTo,
-    });
+  const inventory = await Inventory.create({
+    userId,
+    ingredientName,
+    description,
+    unit,
+    quantity,
+    unitCost,
+    validFrom,
+    validTo,
+  });
 
-    return inventory;
+  return inventory;
 };
 
 const updateInventory = async (inventoryId, userId, payload) => {
-    const inventory = await Inventory.findOne({
-        _id: inventoryId,
-        userId,
-    });
+  const inventory = await Inventory.findOne({
+    _id: inventoryId,
+    userId,
+  });
 
-    if (!inventory) {
-        throw new ApiError(404, "Inventory not found");
-    }
+  if (!inventory) {
+    throw new ApiError(404, 'Inventory not found');
+  }
 
-    Object.assign(inventory, payload);
+  Object.assign(inventory, payload);
 
-    await inventory.save();
+  await inventory.save();
 
-    return inventory;
+  return inventory;
 };
 
 const deleteInventory = async (inventoryId, userId) => {
-    const inventory = await Inventory.findOne({
-        _id: inventoryId,
-        userId,
-    });
+  const inventory = await Inventory.findOne({
+    _id: inventoryId,
+    userId,
+  });
 
-    if (!inventory) {
-        throw new ApiError(404, "Inventory not found");
-    }
+  if (!inventory) {
+    throw new ApiError(404, 'Inventory not found');
+  }
 
-    await inventory.deleteOne();
+  const isUsed = await MenuIngredient.exists({
+    inventoryId,
+  });
+
+  if (isUsed) {
+    throw new ApiError(409, 'Inventory cannot be deleted because it is used by one or more menus');
+  }
+
+  await inventory.deleteOne();
 };
 
 const getInventoryOptions = async (userId) => {
-    return await Inventory.find(
-        { userId },
-        {
-            ingredientName: 1,
-            unit: 1,
-            quantity: 1,
-        }
-    ).sort({ ingredientName: 1 });
+  return await Inventory.find(
+    { userId },
+    {
+      ingredientName: 1,
+      unit: 1,
+      quantity: 1,
+    }
+  ).sort({ ingredientName: 1 });
 };
 
 module.exports = {
-    getAllInventory,
-    getInventoryById,
-    createInventory,
-    updateInventory,
-    deleteInventory,
-    getInventoryOptions,
+  getAllInventory,
+  getInventoryById,
+  createInventory,
+  updateInventory,
+  deleteInventory,
+  getInventoryOptions,
 };
