@@ -2,10 +2,18 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiResponse = require('../utils/ApiResponse');
 const authService = require('../services/auth.service');
 
+// const cookieOptions = {
+//   httpOnly: true,
+//   secure: process.env.NODE_ENV === 'production',
+//   sameSite: 'strict',
+//   maxAge: 7 * 24 * 60 * 60 * 1000,
+// };
+
 const cookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'strict',
+  secure: true, // WAJIB true karena backend selalu diakses via https (Render)
+  sameSite: 'none', // WAJIB none karena frontend & backend beda domain (cross-site)
+  path: '/', // pastikan cookie berlaku di semua path, bukan cuma /auth
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
