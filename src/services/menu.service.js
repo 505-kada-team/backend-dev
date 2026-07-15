@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Menu = require('../models/menu.model');
 const MenuIngredient = require('../models/menuIngredient.model');
 const Inventory = require('../models/inventory.model');
+const PlanningItem = require('../models/planningItems.model');
 const ApiError = require('../utils/ApiError');
 const paginate = require('../utils/paginate');
 
@@ -11,12 +12,15 @@ const paginate = require('../utils/paginate');
  */
 const buildMenuResponse = (menu, ingredients) => {
   const mappedIngredients = ingredients.map((ing) => {
-    const costPerIngredient = ing.quantityNeeded * ing.inventoryId.unitCost;
+    const inventory = ing.inventoryId;
+    const pricePerUnit = inventory.unitCost / inventory.quantity;
+    const costPerIngredient = ing.quantityNeeded * pricePerUnit;
+
     return {
       id: ing._id,
-      inventoryId: ing.inventoryId._id,
-      ingredientName: ing.inventoryId.ingredientName,
-      unit: ing.inventoryId.unit,
+      inventoryId: inventory._id,
+      ingredientName: inventory.ingredientName,
+      unit: inventory.unit,
       quantityNeeded: ing.quantityNeeded,
       costPerIngredient,
     };
@@ -79,16 +83,11 @@ const validateIngredientsOwnership = async (ingredients, userId) => {
 // };
 
 const getAllMenus = async (userId, query) => {
-  const { data: menus, meta } = await paginate(
-    Menu,
-    { userId },
-    query,
-    {
-      searchableFields: ['name', 'description'],
-      defaultSort: '-createdAt',
-      defaultLimit: 10,
-    }
-  );
+  const { data: menus, meta } = await paginate(Menu, { userId }, query, {
+    searchableFields: ['name', 'description'],
+    defaultSort: '-createdAt',
+    defaultLimit: 10,
+  });
 
   if (menus.length === 0) {
     return {
@@ -221,23 +220,25 @@ const deleteMenu = async (menuId, userId) => {
     throw new ApiError(404, 'Menu not found');
   }
 
-  // Guard: tolak hapus kalau menu ini masih dipakai di Planning manapun.
-  // NOTE: butuh model PlanningItem dari modul Planning (Dev C). Kalau modul itu
-  // belum di-merge, sementara guard ini bisa dikomentari dulu — tapi WAJIB
-  // diaktifkan sebelum production, supaya tidak ada PlanningItem dengan menuId rusak.
-  const PlanningItem = mongoose.models.PlanningItem;
-  if (PlanningItem) {
-    const usedInPlanning = await PlanningItem.exists({ menuId });
-    if (usedInPlanning) {
-      throw new ApiError(
-        409,
-        'Menu cannot be deleted because it is still used in an active planning'
-      );
-    }
+  // Guard tegas: kalau masih dipakai di Planning manapun, tolak hapus.
+  // Tidak ada lagi kondisi "if (PlanningItem)" yang bisa silently ter-skip.
+  const usedInPlanning = await PlanningItem.exists({ menuId });
+  if (usedInPlanning) {
+    throw new ApiError(
+      409,
+      'Menu cannot be deleted because it is still used in an active planning'
+    );
   }
 
-  await MenuIngredient.deleteMany({ menuId });
-  await menu.deleteOne();
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      await MenuIngredient.deleteMany({ menuId }, { session });
+      await menu.deleteOne({ session });
+    });
+  } finally {
+    session.endSession();
+  }
 };
 
 module.exports = {
