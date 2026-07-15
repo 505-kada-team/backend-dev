@@ -1,8 +1,12 @@
 const MenuIngredient = require('../models/menuIngredient.model');
 const Menu = require('../models/menu.model');
 const ApiError = require('./ApiError');
-const { calculateMenuCost } = require('./costCalculation');
 
+/**
+ * Ambil beberapa Menu sekaligus + hitung hargaPokok & laba masing-masing.
+ * Melempar ApiError kalau ada menuId yang tidak ditemukan / bukan milik user.
+ * @returns {Map<string, {nama, hargaJual, hargaPokok, laba, ingredients}>}
+ */
 const getMenuPricingMap = async (menuIds, userId) => {
   const menus = await Menu.find({ _id: { $in: menuIds }, userId });
 
@@ -21,19 +25,20 @@ const getMenuPricingMap = async (menuIds, userId) => {
     const ingredients = allIngredients.filter(
       (ing) => ing.menuId.toString() === menu._id.toString()
     );
-
-    const { costPrice, breakdown } = calculateMenuCost(ingredients);
-
+    const costPrice = ingredients.reduce(
+      (sum, ing) => sum + ing.quantityNeeded * ing.inventoryId.unitCost,
+      0
+    );
     pricingMap.set(menu._id.toString(), {
       name: menu.name,
       sellingPrice: menu.sellingPrice,
       costPrice,
       profit: menu.sellingPrice - costPrice,
-      ingredients: breakdown.map((b) => ({
-        inventoryId: b.inventoryId.toString(),
-        ingredientName: b.ingredientName,
-        unit: b.unit,
-        quantityNeeded: b.quantityNeeded,
+      ingredients: ingredients.map((ing) => ({
+        inventoryId: ing.inventoryId._id.toString(),
+        ingredientName: ing.inventoryId.ingredientName,
+        unit: ing.inventoryId.unit,
+        quantityNeeded: ing.quantityNeeded,
       })),
     });
   }
