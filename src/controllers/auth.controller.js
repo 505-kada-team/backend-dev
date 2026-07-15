@@ -18,9 +18,11 @@ const register = asyncHandler(async (req, res) => {
 const login = asyncHandler(async (req, res) => {
   const { user, accessToken, refreshToken } = await authService.login(req.body);
   const platform = req.headers['x-platform'];
+  const isMobile = platform === 'mobile';
 
-  if (platform === 'web') {
+  if (!isMobile) {
     res.cookie('refreshToken', refreshToken, cookieOptions);
+
     return new ApiResponse(200, { user, accessToken }, 'Login berhasil').send(res);
   }
 
@@ -28,10 +30,16 @@ const login = asyncHandler(async (req, res) => {
 });
 
 const refresh = asyncHandler(async (req, res) => {
-  // Refresh token bisa datang dari cookie (web) atau body (mobile/testing)
+  // Prioritas cookie (Web + Postman), fallback ke body (Mobile)
   const token = req.cookies?.refreshToken || req.body.refreshToken;
+
+  if (!token) {
+    throw new ApiError(401, 'Refresh token not found');
+  }
+
   const { accessToken } = await authService.refresh(token);
-  return new ApiResponse(200, { accessToken }, 'Token berhasil diperbarui').send(res);
+
+  return new ApiResponse(200, { accessToken }, 'Token refreshed successfully').send(res);
 });
 
 const logout = asyncHandler(async (req, res) => {
