@@ -11,11 +11,8 @@ const calculateMaterials = async (planningItems, menuIngredients) => {
         for (const ingredient of ingredients) {
 
             const inventory = ingredient.inventoryId;
-
             const key = inventory._id.toString();
-
-            const needed =
-                ingredient.quantityNeeded * planningItem.quantity;
+            const needed = ingredient.quantityNeeded * planningItem.quantity;
 
             if (!materialMap.has(key)) {
 

@@ -80,13 +80,13 @@ const getPlanningDetail = async (planningId, userId) => {
   // jangan sampai crash — filter saja & idealnya log untuk investigasi manual.
   const validPlanningItems = planningItems.filter((item) => item.menuId !== null);
 
-  if (validPlanningItems.length !== planningItems.length) {
-    console.warn(
-      `Planning ${planningId} contains ${
-        planningItems.length - validPlanningItems.length
-      } planning item(s) referencing deleted menus.`
-    );
-  }
+//   if (validPlanningItems.length !== planningItems.length) {
+//     console.warn(
+//       `Planning ${planningId} contains ${
+//         planningItems.length - validPlanningItems.length
+//       } planning item(s) referencing deleted menus.`
+//     );
+//   }
 
   const menuIds = validPlanningItems.map((item) => item.menuId._id);
 
