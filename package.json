@@ -17,6 +17,7 @@
   "dependencies": {
     "@getbrevo/brevo": "^6.0.2",
     "bcryptjs": "^2.4.3",
+    "brevo": "^1.0.0",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
