@@ -20,15 +20,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Password wajib diisi'],
       minlength: 8,
-      select: false, // supaya tidak ke-return by default di query
+      select: false,
     },
     role: {
       type: String,
       enum: ['user', 'admin'],
       default: 'user',
     },
-    refreshToken: {
-      type: String,
+
+    // Dipakai buat invalidasi access token lama begitu ada refresh baru
+    // ATAU logout-all-devices, tanpa perlu simpan/cek tiap access token satu-satu.
+    tokenVersion: {
+      type: Number,
+      default: 0,
       select: false,
     },
 
@@ -87,14 +91,11 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Hash password sebelum disimpan, hanya kalau field password berubah
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
 
-  // -1 detik untuk buffer race condition: JWT iat dibulatkan ke detik,
-  // supaya token yang diterbitkan tepat saat request ini tidak ikut ke-invalidasi
   if (!this.isNew) this.passwordChangedAt = Date.now() - 1000;
 
   next();
