@@ -67,4 +67,5 @@ module.exports = {
     resendCooldownSeconds: envVars.OTP_RESEND_COOLDOWN_SECONDS,
     maxAttempts: envVars.OTP_MAX_ATTEMPTS,
   },
+  singleSessionOnly: true,
 };

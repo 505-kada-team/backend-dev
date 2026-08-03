@@ -2,10 +2,21 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/user.model');
+const RefreshToken = require('../models/refreshToken.model');
 const ApiError = require('../utils/ApiError');
-const { jwt: jwtConfig, otp: otpConfig } = require('../config/env');
+const { hashToken } = require('../utils/hashToken');
+const { jwt: jwtConfig, otp: otpConfig, singleSessionOnly } = require('../config/env');
 const { generateOtp, hashOtp, getOtpExpiry } = require('../utils/otp');
 const { sendOtpEmail } = require('../utils/mailer');
+
+// Refresh token TIDAK lagi berupa JWT, tapi random string yang di-hash sebelum
+// disimpan (lihat RefreshToken model). Alasan: JWT refresh token tidak bisa
+// di-single-use / di-rotasi dengan mudah karena dia stateless by design,
+// padahal rotasi butuh state (usedAt, familyId) untuk deteksi reuse.
+const REFRESH_TOKEN_TTL_MS = {
+  web: 7 * 24 * 60 * 60 * 1000, // 7 hari
+  mobile: 30 * 24 * 60 * 60 * 1000, // 30 hari, mobile app jarang sempat refresh manual
+};
 
 const generateAccessToken = (user) =>
   // Misal user
@@ -29,109 +40,239 @@ const generateAccessToken = (user) =>
   //   "iat": 1752220000,
   //   "exp": 1752223600
   // }
-  jwt.sign({ sub: user._id, role: user.role }, jwtConfig.accessSecret, {
-    expiresIn: jwtConfig.accessExpires,
+  jwt.sign(
+    { sub: user._id, role: user.role, tokenVersion: user.tokenVersion },
+    jwtConfig.accessSecret,
+    {
+      expiresIn: jwtConfig.accessExpires,
+    }
+  );
+
+/**
+ * Terbitkan refresh token baru & simpan hash-nya ke DB.
+ * familyId & parentId dioper saat ini adalah hasil ROTASI dari token lama
+ * (dipanggil dari refresh()); kalau kosong berarti token pertama di sesi
+ * baru (dipanggil dari login()).
+ */
+const issueRefreshToken = async (
+  user,
+  { platform, familyId = null, parentId = null, userAgent, ip }
+) => {
+  const rawRefreshToken = crypto.randomBytes(64).toString('hex');
+  const ttlMs = REFRESH_TOKEN_TTL_MS[platform];
+
+  await RefreshToken.create({
+    userId: user._id,
+    tokenHash: hashToken(rawRefreshToken),
+    familyId: familyId || crypto.randomUUID(),
+    parentId,
+    platform,
+    expiresAt: new Date(Date.now() + ttlMs),
+    userAgent,
+    ip,
   });
 
-const generateRefreshToken = (user) =>
-  jwt.sign({ sub: user._id }, jwtConfig.refreshSecret, {
-    expiresIn: jwtConfig.refreshExpires,
-  });
+  return { refreshToken: rawRefreshToken, refreshTokenTtlMs: ttlMs };
+};
 
 const register = async ({ name, email, password }) => {
   const existingUser = await User.findOne({ email });
   if (existingUser) {
-    throw new ApiError(409, 'Email sudah terdaftar');
+    throw new ApiError(409, 'Email already registered');
   }
 
   const user = await User.create({ name, email, password });
 
-  // Kirim kode verifikasi otomatis, reuse logic yang sama dengan endpoint send.
-  // Sengaja panggil function-nya langsung (bukan HTTP call ke diri sendiri).
   await sendVerificationCode(email);
 
   // TIDAK menerbitkan accessToken/refreshToken di sini secara sengaja,
-  // karena user belum verifikasi email → belum boleh dianggap "login".
+  // karena user belum verifikasi email -> belum boleh dianggap "login".
   return {
     user: { id: user._id, name: user.name, email: user.email, role: user.role },
   };
 };
 
-const login = async ({ email, password }) => {
-  const user = await User.findOne({ email }).select('+password');
+const login = async ({ email, password }, { platform, userAgent, ip }) => {
+  const user = await User.findOne({ email }).select('+password +tokenVersion');
   if (!user || !(await user.comparePassword(password))) {
-    throw new ApiError(401, 'Email atau password salah');
+    throw new ApiError(401, 'Email or password is incorrect');
   }
 
   if (!user.isEmailVerified) {
-    // code khusus supaya frontend gampang bedakan dari error 401 biasa,
-    // lalu redirect ke halaman verifikasi
-    throw new ApiError(403, 'Email belum diverifikasi', { code: 'EMAIL_NOT_VERIFIED' });
+    throw new ApiError(403, 'Email has not been verified', { code: 'EMAIL_NOT_VERIFIED' });
   }
 
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
+  await enforceSingleSession(user);
 
-  user.refreshToken = refreshToken;
-  await user.save();
+  const accessToken = generateAccessToken(user);
+  const { refreshToken, refreshTokenTtlMs } = await issueRefreshToken(user, {
+    platform,
+    userAgent,
+    ip,
+  });
 
   return {
     user: { id: user._id, name: user.name, email: user.email, role: user.role },
     accessToken,
     refreshToken,
+    refreshTokenTtlMs,
   };
 };
 
-const refresh = async (refreshToken) => {
-  let decoded;
-  try {
-    decoded = jwt.verify(refreshToken, jwtConfig.refreshSecret);
-  } catch (err) {
-    throw new ApiError(401, 'Refresh token tidak valid atau kedaluwarsa');
-  }
+/**
+ * Paksa hanya 1 sesi aktif per user. Begitu device baru login, SEMUA sesi
+ * lama (refresh token DAN access token, lewat tokenVersion) langsung mati
+ * -- tidak menunggu masa berlaku (exp) JWT habis, karena hanya ada 1 sesi
+ * yang boleh hidup jadi tidak ada risiko "salah usir" device lain yang sah.
+ *
+ * PENTING: function ini menaikkan tokenVersion, jadi HARUS dipanggil
+ * SEBELUM generateAccessToken() dijalankan untuk device yang sedang login,
+ * supaya access token baru dapat tokenVersion yang sudah ter-update.
+ */
+const enforceSingleSession = async (user) => {
+  if (!singleSessionOnly) return;
 
-  const user = await User.findById(decoded.sub).select('+refreshToken');
-  if (!user || user.refreshToken !== refreshToken) {
-    throw new ApiError(401, 'Refresh token tidak dikenali');
-  }
+  const hasActiveSession = await RefreshToken.exists({
+    userId: user._id,
+    revokedAt: null,
+    usedAt: null,
+  });
 
-  const accessToken = generateAccessToken(user);
-  return { accessToken };
+  if (!hasActiveSession) return; // belum ada sesi lain, tidak perlu evict apa pun
+
+  // Revoke semua refresh token lama milik user ini
+  await RefreshToken.updateMany({ userId: user._id, revokedAt: null }, { revokedAt: new Date() });
+
+  // Naikkan tokenVersion -> access token device lama mati SEKETIKA di
+  // request berikutnya, tidak perlu tunggu exp. Aman dilakukan di sini
+  // karena tidak ada device lain yang sah untuk dijaga.
+  user.tokenVersion += 1;
+  await user.save();
 };
 
-const logout = async (userId) => {
-  await User.findByIdAndUpdate(userId, { refreshToken: null });
+const refresh = async (rawToken, { platform, userAgent, ip }) => {
+  if (!rawToken) {
+    throw new ApiError(401, 'Refresh token not found');
+  }
+
+  const tokenHash = hashToken(rawToken);
+
+  // findOne dulu untuk membedakan 3 kasus (tidak ketemu / sudah dipakai&revoked / valid),
+  // supaya pesan errornya informatif -- bukan sekadar "gagal"
+  const existing = await RefreshToken.findOne({ tokenHash });
+
+  if (!existing) {
+    throw new ApiError(401, 'Refresh token not recognized');
+  }
+
+  if (existing.usedAt || existing.revokedAt) {
+    await RefreshToken.updateMany(
+      { familyId: existing.familyId, revokedAt: null },
+      { revokedAt: new Date() }
+    );
+    throw new ApiError(401, 'Invalid session, please log in again');
+  }
+
+  if (existing.expiresAt.getTime() < Date.now()) {
+    throw new ApiError(401, 'Refresh token is invalid or expired');
+  }
+
+  // Klaim token secara ATOMIC: filter menyertakan usedAt: null, jadi kalau
+  // ada request lain yang lebih dulu "mengklaim" token ini, findOneAndUpdate
+  // ini akan return null (bukan overwrite silang), dan kita anggap sebagai reuse.
+  const stored = await RefreshToken.findOneAndUpdate(
+    { _id: existing._id, usedAt: null, revokedAt: null },
+    { usedAt: new Date() },
+    { new: true }
+  );
+
+  if (!stored) {
+    // Kalah race -> request lain sudah lebih dulu mengklaim token ini di antara
+    // findOne() dan findOneAndUpdate() di atas. Perlakukan sebagai reuse juga.
+    await RefreshToken.updateMany(
+      { familyId: existing.familyId, revokedAt: null },
+      { revokedAt: new Date() }
+    );
+    throw new ApiError(401, 'Invalid session, please log in again');
+  }
+
+  const user = await User.findById(stored.userId).select('+tokenVersion');
+  if (!user) {
+    throw new ApiError(401, 'Token owner not found');
+  }
+
+  user.tokenVersion += 1;
+  await user.save();
+
+  const accessToken = generateAccessToken(user);
+
+  const { refreshToken, refreshTokenTtlMs } = await issueRefreshToken(user, {
+    platform: stored.platform,
+    familyId: stored.familyId,
+    parentId: stored._id,
+    userAgent,
+    ip,
+  });
+
+  return { accessToken, refreshToken, refreshTokenTtlMs, platform: stored.platform };
+};
+
+/**
+ * Logout: revoke refresh token milik sesi ini DAN naikkan tokenVersion,
+ * supaya access token yang sedang dipegang juga mati SEKETIKA -- tidak
+ * menunggu exp (15 menit) habis. Aman menaikkan tokenVersion di sini karena
+ * dengan singleSessionOnly hanya ada 1 sesi aktif, jadi tidak ada risiko
+ * "salah matikan" device lain yang sah.
+ *
+ * Dicari berdasarkan rawToken (bukan userId) karena request logout datang
+ * dari device itu sendiri -- rawToken sudah cukup untuk tahu siapa user &
+ * sesi mana yang harus dimatikan.
+ */
+const logout = async (rawToken) => {
+  if (!rawToken) return;
+
+  const tokenHash = hashToken(rawToken);
+  const stored = await RefreshToken.findOneAndUpdate(
+    { tokenHash, revokedAt: null },
+    { revokedAt: new Date() }
+  );
+
+  if (!stored) return; // token sudah tidak aktif / tidak dikenal, tidak perlu apa pun lagi
+
+  await User.findByIdAndUpdate(stored.userId, { $inc: { tokenVersion: 1 } });
+};
+
+/**
+ * Force logout user tertentu dari SEMUA sesi aktifnya. Dipakai untuk
+ * skenario ADMIN (misal: admin mencurigai akun user lain diretas, paksa
+ * logout dari jarak jauh) -- BUKAN untuk self-logout biasa, karena dengan
+ * singleSessionOnly, self-logout cukup pakai logout() di atas.
+ */
+const logoutAllDevices = async (userId) => {
+  await RefreshToken.updateMany({ userId, revokedAt: null }, { revokedAt: new Date() });
+  await User.findByIdAndUpdate(userId, { $inc: { tokenVersion: 1 } });
 };
 
 /* -------------------------------------------------------------------------- */
 /* Email verification                                                         */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Kirim (atau kirim ulang) kode verifikasi email.
- * Dipakai baik oleh endpoint POST /verify-email/send maupun dipanggil
- * langsung dari register(). Sengaja HANYA satu function untuk send & resend.
- */
 const sendVerificationCode = async (email) => {
   const user = await User.findOne({ email }).select('+emailVerificationSentAt +isEmailVerified');
 
-  // Beda dengan forgot-password, di sini email SUDAH pasti ada (baru register
-  // atau user memang sedang login flow verifikasi), jadi boleh kasih tahu
-  // kalau tidak ditemukan.
   if (!user) {
-    throw new ApiError(404, 'Email tidak ditemukan');
+    throw new ApiError(404, 'Email not found');
   }
 
   if (user.isEmailVerified) {
-    throw new ApiError(400, 'Email sudah terverifikasi');
+    throw new ApiError(400, 'Email already verified');
   }
 
-  // Cooldown resend, cegah spam ke SMTP & inbox user
   if (user.emailVerificationSentAt) {
     const secondsSinceLastSend = (Date.now() - user.emailVerificationSentAt.getTime()) / 1000;
     if (secondsSinceLastSend < otpConfig.resendCooldownSeconds) {
       const wait = Math.ceil(otpConfig.resendCooldownSeconds - secondsSinceLastSend);
-      throw new ApiError(429, `Tunggu ${wait} detik sebelum meminta kode baru`);
+      throw new ApiError(429, `Wait ${wait} seconds before requesting a new code`);
     }
   }
 
@@ -145,38 +286,35 @@ const sendVerificationCode = async (email) => {
   await sendOtpEmail({ to: user.email, code, purpose: 'verify-email' });
 };
 
-/**
- * Konfirmasi kode verifikasi email.
- */
 const confirmVerificationCode = async (email, code) => {
   const user = await User.findOne({ email }).select(
     '+emailVerificationCode +emailVerificationExpires +emailVerificationAttempts +isEmailVerified'
   );
 
   if (!user) {
-    throw new ApiError(404, 'Email tidak ditemukan');
+    throw new ApiError(404, 'Email not found');
   }
 
   if (user.isEmailVerified) {
-    throw new ApiError(400, 'Email sudah terverifikasi');
+    throw new ApiError(400, 'Email already verified');
   }
 
   if (!user.emailVerificationCode || !user.emailVerificationExpires) {
-    throw new ApiError(400, 'Belum ada kode verifikasi, silakan minta kode baru');
+    throw new ApiError(400, 'No verification code yet, please request a new code');
   }
 
   if (user.emailVerificationAttempts >= otpConfig.maxAttempts) {
-    throw new ApiError(429, 'Terlalu banyak percobaan, silakan minta kode baru');
+    throw new ApiError(429, 'Too many attempts, please request a new code');
   }
 
   if (user.emailVerificationExpires.getTime() < Date.now()) {
-    throw new ApiError(400, 'Kode sudah kedaluwarsa, silakan minta kode baru');
+    throw new ApiError(400, 'Code expired, please request a new code');
   }
 
   if (hashOtp(code) !== user.emailVerificationCode) {
     user.emailVerificationAttempts += 1;
     await user.save();
-    throw new ApiError(400, 'Kode tidak valid');
+    throw new ApiError(400, 'Invalid code');
   }
 
   user.isEmailVerified = true;
@@ -191,22 +329,14 @@ const confirmVerificationCode = async (email, code) => {
 /* Forgot password (Pattern B: send -> verify-code -> reset-password)         */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Langkah 1: kirim kode reset ke email. Response harus SELALU generic
- * (tidak boleh bocorkan apakah email terdaftar atau tidak), jadi function
- * ini sengaja tidak throw error untuk kasus "email tidak ditemukan" —
- * silent return, caller (controller) yang selalu kasih message generic.
- */
 const forgotPassword = async (email) => {
   const user = await User.findOne({ email }).select('+resetPasswordSentAt');
 
-  if (!user) return; // sengaja diam, jangan bocorkan info
+  if (!user) return;
 
   if (user.resetPasswordSentAt) {
     const secondsSinceLastSend = (Date.now() - user.resetPasswordSentAt.getTime()) / 1000;
     if (secondsSinceLastSend < otpConfig.resendCooldownSeconds) {
-      // Untuk forgot-password, tetap silent-return supaya timing attack
-      // (mengukur response time) tidak bisa dipakai menebak email terdaftar.
       return;
     }
   }
@@ -221,36 +351,29 @@ const forgotPassword = async (email) => {
   await sendOtpEmail({ to: user.email, code, purpose: 'forgot-password' });
 };
 
-/**
- * Langkah 2: verifikasi kode reset, kalau valid terbitkan resetToken (JWT
- * short-lived, single-use lewat nonce) untuk dipakai di langkah 3.
- */
 const verifyResetCode = async (email, code) => {
   const user = await User.findOne({ email }).select(
     '+resetPasswordCode +resetPasswordExpires +resetPasswordAttempts'
   );
 
-  // Di sini BOLEH kasih tahu kalau tidak ketemu/kode salah, karena user
-  // sudah lolos tahap 1 (menerima email) — bukan lagi celah enumeration.
   if (!user || !user.resetPasswordCode || !user.resetPasswordExpires) {
-    throw new ApiError(400, 'Kode tidak valid, silakan minta kode baru');
+    throw new ApiError(400, 'Invalid code, please request a new code');
   }
 
   if (user.resetPasswordAttempts >= otpConfig.maxAttempts) {
-    throw new ApiError(429, 'Terlalu banyak percobaan, silakan minta kode baru');
+    throw new ApiError(429, 'Too many attempts, please request a new code');
   }
 
   if (user.resetPasswordExpires.getTime() < Date.now()) {
-    throw new ApiError(400, 'Kode sudah kedaluwarsa, silakan minta kode baru');
+    throw new ApiError(400, 'Code expired, please request a new code');
   }
 
   if (hashOtp(code) !== user.resetPasswordCode) {
     user.resetPasswordAttempts += 1;
     await user.save();
-    throw new ApiError(400, 'Kode tidak valid');
+    throw new ApiError(400, 'Invalid code');
   }
 
-  // Kode benar → hapus kode (satu kali pakai), generate nonce untuk resetToken
   const nonce = crypto.randomBytes(16).toString('hex');
   user.resetPasswordCode = undefined;
   user.resetPasswordExpires = undefined;
@@ -267,15 +390,14 @@ const verifyResetCode = async (email, code) => {
   return { resetToken };
 };
 
-/**
- * Langkah 3: pakai resetToken (sudah divalidasi oleh middleware
- * verifyResetToken, user tersedia di req.resetUser) untuk set password baru.
- */
 const resetPassword = async (user, newPassword) => {
-  user.password = newPassword; // di-hash otomatis lewat pre('save') hook
-  user.resetPasswordNonce = undefined; // consume nonce, resetToken jadi tidak valid lagi
-  user.refreshToken = null; // paksa logout semua device lama
+  user.password = newPassword;
+  user.resetPasswordNonce = undefined;
+  user.tokenVersion += 1; // matikan semua access token lama
   await user.save();
+
+  // Revoke semua refresh token lama -> paksa login ulang di semua device
+  await RefreshToken.updateMany({ userId: user._id, revokedAt: null }, { revokedAt: new Date() });
 };
 
 /* -------------------------------------------------------------------------- */
@@ -283,24 +405,26 @@ const resetPassword = async (user, newPassword) => {
 /* -------------------------------------------------------------------------- */
 
 const changePassword = async (userId, oldPassword, newPassword) => {
-  const user = await User.findById(userId).select('+password');
+  const user = await User.findById(userId).select('+password +tokenVersion');
   if (!user) {
-    throw new ApiError(404, 'User tidak ditemukan');
+    throw new ApiError(404, 'User not found');
   }
 
   const isOldPasswordCorrect = await user.comparePassword(oldPassword);
   if (!isOldPasswordCorrect) {
-    throw new ApiError(401, 'Password lama tidak sesuai');
+    throw new ApiError(401, 'Old password is incorrect');
   }
 
   const isSameAsOld = await bcrypt.compare(newPassword, user.password);
   if (isSameAsOld) {
-    throw new ApiError(400, 'Password baru tidak boleh sama dengan password lama');
+    throw new ApiError(400, 'New password cannot be the same as the old password');
   }
 
   user.password = newPassword;
-  user.refreshToken = null; // paksa login ulang di device lain
+  user.tokenVersion += 1; // paksa login ulang di device lain
   await user.save();
+
+  await RefreshToken.updateMany({ userId: user._id, revokedAt: null }, { revokedAt: new Date() });
 };
 
 module.exports = {
@@ -308,6 +432,7 @@ module.exports = {
   login,
   refresh,
   logout,
+  logoutAllDevices,
   sendVerificationCode,
   confirmVerificationCode,
   forgotPassword,

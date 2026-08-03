@@ -66,7 +66,8 @@ router.patch(
 );
 
 router.post('/refresh', validate(authValidation.refresh), refresh);
-router.post('/logout', authenticate, logout);
+router.post('/logout', logout);
+// router.post('/logout-all-devices', authenticate, logoutAllDevices);
 router.get('/me', authenticate, me);
 
 module.exports = router;
