@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="./assets/logo.svg" width="96" alt="KADA Logo" />
+<img src="./logo.svg" width="96" alt="KADA Logo" />
 
-# KADA — F&B Business Management System
+# KADA Kopi Business Management System
 
-Backend service untuk platform manajemen bisnis F&B (UMKM), dibangun dengan Node.js, Express, dan MongoDB.
+Backend service untuk platform manajemen bisnis Kopi (UMKM), dibangun dengan Node.js, Express, dan MongoDB.
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Express](https://img.shields.io/badge/Express-4.x-000000?logo=express&logoColor=white)](https://expressjs.com)
@@ -22,41 +22,60 @@ Backend service untuk platform manajemen bisnis F&B (UMKM), dibangun dengan Node
 - [Tentang Proyek](#tentang-proyek)
 - [Tech Stack](#tech-stack)
 - [Struktur Folder](#struktur-folder)
+- [Arsitektur](#arsitektur)
 - [Modul: Authentication](#modul-authentication)
-  - [Strategi Token](#strategi-token)
-  - [Alur Utama](#alur-utama)
+- [Modul: Inventory](#modul-inventory)
+- [Modul: Menu](#modul-menu)
+- [Modul: Production Plan (Planning)](#modul-production-plan-planning)
+- [Modul: Sales](#modul-sales)
+- [Modul: Dashboard](#modul-dashboard)
 - [Environment Variables](#environment-variables)
-- [API Endpoints — Auth](#api-endpoints--auth)
 - [Menjalankan Proyek](#menjalankan-proyek)
-- [Roadmap](#roadmap)
 
 ---
 
 ## Tentang Proyek
 
-**KADA** adalah sistem manajemen bisnis F&B yang membantu pelaku UMKM mengelola inventory,
+**KADA** adalah sistem manajemen bisnis Kopi yang membantu pelaku UMKM mengelola inventory,
 menu, production plan, dan penjualan dalam satu platform, dilengkapi rekomendasi _production
 plan_ berbasis AI (LLM-as-advisor) dan Menu Engineering Matrix.
 
-Dokumen ini fokus pada **modul Authentication**, karena base code sedang disusun ulang dari
-awal dan fitur akan ditambahkan bertahap, modul demi modul.
+Seluruh modul inti sudah berjalan: **Authentication**, **Inventory**, **Menu**,
+**Production Plan**, **Sales**, dan **Dashboard** ringkasan bisnis.
 
 ## Tech Stack
 
-| Layer                 | Teknologi                             | Alasan                                                                     |
-| --------------------- | ------------------------------------- | -------------------------------------------------------------------------- |
-| Runtime & Framework   | Node.js + Express                     | Standar industri untuk REST API, ekosistem matang                          |
-| Database              | MongoDB + Mongoose                    | Schema fleksibel, cocok untuk iterasi cepat                                |
-| Access Token          | JSON Web Token (JWT)                  | Stateless, cepat diverifikasi, mudah di-scale horizontal                   |
-| Refresh Token         | Random string (opaque) + SHA-256 hash | Bisa di-_rotate_ & di-_revoke_ per sesi, tidak bisa dilakukan di JWT murni |
-| Password Hashing      | bcryptjs                              | Salted hash, standar industri untuk kredensial                             |
-| OTP Hashing           | crypto (SHA-256, built-in)            | OTP berumur pendek, tidak perlu cost factor bcrypt yang berat              |
-| Validasi Input        | Joi                                   | Deklaratif, terpisah dari business logic                                   |
-| Email Delivery        | Brevo Transactional API               | Alternatif SMTP yang tidak diblokir hosting free-tier                      |
-| Security Headers      | Helmet                                | Mitigasi XSS, clickjacking, MIME sniffing                                  |
-| Rate Limiting         | express-rate-limit                    | Mencegah brute-force pada endpoint login & OTP                             |
-| NoSQL Injection Guard | express-mongo-sanitize                | Membersihkan operator `$` dari input user                                  |
-| Logging               | Winston + Morgan                      | Log terstruktur untuk debugging di production                              |
+| Layer                 | Teknologi                                | Alasan                                                                     |
+| --------------------- | ---------------------------------------- | -------------------------------------------------------------------------- |
+| Runtime & Framework   | Node.js + Express                        | Standar industri untuk REST API, ekosistem matang                          |
+| Database              | MongoDB + Mongoose                       | Schema fleksibel, cocok untuk domain yang relasinya berubah-ubah           |
+| Access Token          | JSON Web Token (JWT)                     | Stateless, cepat diverifikasi, mudah di-scale horizontal                   |
+| Refresh Token         | Random string (opaque) + SHA-256 hash    | Bisa di-_rotate_ & di-_revoke_ per sesi, tidak bisa dilakukan di JWT murni |
+| Password Hashing      | bcryptjs                                 | Salted hash, standar industri untuk kredensial                             |
+| OTP Hashing           | crypto (SHA-256, built-in)               | OTP berumur pendek, tidak perlu cost factor bcrypt yang berat              |
+| Validasi Input        | Joi                                      | Deklaratif, terpisah dari business logic                                   |
+| Email Delivery        | Brevo Transactional API                  | Alternatif SMTP yang tidak diblokir hosting free-tier                      |
+| Security Headers      | Helmet                                   | Mitigasi XSS, clickjacking, MIME sniffing                                  |
+| Rate Limiting         | express-rate-limit                       | Mencegah brute-force pada endpoint login & OTP                             |
+| NoSQL Injection Guard | express-mongo-sanitize                   | Membersihkan operator `$` dari input user                                  |
+| Logging               | Winston + Morgan                         | Log terstruktur untuk debugging di production                              |
+| Testing               | Jest + Supertest + mongodb-memory-server | Test terisolasi tanpa butuh instance MongoDB eksternal                     |
+
+## Struktur Folder
+
+```
+src/
+├── config/         # Load & validasi environment variables (Joi), koneksi DB
+├── controllers/     # Terima request, panggil service, bentuk response
+├── middlewares/      # authenticate, validate, rate limiter, error handler
+├── models/           # Schema Mongoose per domain
+├── routes/           # Definisi endpoint per modul
+├── services/         # Business logic per modul
+├── utils/            # Helper murni (hashToken, ApiError, ApiResponse, otp, mailer, pricing)
+└── validations/       # Schema Joi per modul
+```
+
+## Arsitektur
 
 **Prinsip arsitektur:** `Route → Middleware (validate/auth) → Controller → Service → Model`
 
@@ -65,35 +84,24 @@ awal dan fitur akan ditambahkan bertahap, modul demi modul.
 - **Service** — seluruh business logic, tidak bergantung pada `req`/`res`, mudah di-unit-test
 - **Model** — struktur data & aturan di level database (hashing password, index, dsb.)
 
-## Struktur Folder
+Semua endpoint berada di bawah prefix `/api/v1` dan dilindungi stack keamanan global:
+Helmet, CORS ber-_credential_, rate limiter, serta NoSQL injection sanitizer.
 
-```
-src/
-├── config/         # Load & validasi environment variables (Joi)
-├── controllers/     # Terima request, panggil service, bentuk response
-├── middlewares/      # authenticate, validate, rate limiter, error handler
-├── models/           # Schema Mongoose (User, RefreshToken, dsb.)
-├── routes/           # Definisi endpoint per modul
-├── services/         # Business logic (auth, dsb.)
-├── utils/            # Helper murni (hashToken, ApiError, ApiResponse, otp, mailer)
-└── validations/       # Schema Joi per modul
-```
+---
 
 ## Modul: Authentication
 
-Sejak revisi terbaru, sistem auth menggunakan pendekatan **satu sesi aktif per user**
-(_single-device login_) dan **rotating refresh token**, menggantikan pendekatan refresh
-token statis sebelumnya. Perubahan ini menutup dua celah utama: refresh token yang bocor
-tidak bisa dipakai selamanya, dan tidak ada dua device yang bisa login bersamaan atas nama
-user yang sama.
+Sistem auth menggunakan pendekatan **satu sesi aktif per user** (_single-device login_) dan
+**rotating refresh token**. Refresh token yang bocor tidak bisa dipakai selamanya, dan tidak
+ada dua device yang bisa login bersamaan atas nama user yang sama.
 
 ### Strategi Token
 
-| Token             | Bentuk                            | Umur                            | Disimpan di                                           | Karakteristik                                                                              |
-| ----------------- | --------------------------------- | ------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| **Access Token**  | JWT                               | Pendek (15 menit)               | Memory di client                                      | Berisi `sub`, `role`, `tokenVersion`; divalidasi tanpa query DB kecuali cek `tokenVersion` |
-| **Refresh Token** | Random string opaque (64 bytes)   | 7 hari (web) / 30 hari (mobile) | httpOnly Cookie (web) / body (mobile), hash-nya di DB | Single-use, rotasi tiap kali dipakai, dikelompokkan per `familyId`                         |
-| **Reset Token**   | JWT terpisah (`JWT_RESET_SECRET`) | Sangat pendek (10 menit)        | Body request                                          | Sekali pakai, di-scope dengan `purpose` + `nonce`                                          |
+| Token             | Bentuk                            | Umur                            | Disimpan di                           | Karakteristik                                                      |
+| ----------------- | --------------------------------- | ------------------------------- | ------------------------------------- | ------------------------------------------------------------------ |
+| **Access Token**  | JWT                               | Pendek (15 menit)               | Memory di client                      | Berisi `sub`, `role`, `tokenVersion`; validasi cukup 1x query DB   |
+| **Refresh Token** | Random string opaque (64 bytes)   | 7 hari (web) / 30 hari (mobile) | httpOnly Cookie (web) / body (mobile) | Single-use, rotasi tiap kali dipakai, dikelompokkan per `familyId` |
+| **Reset Token**   | JWT terpisah (`JWT_RESET_SECRET`) | Sangat pendek (10 menit)        | Body request                          | Sekali pakai, di-scope dengan `purpose` + `nonce`                  |
 
 **Kenapa refresh token tidak lagi berupa JWT?**
 JWT bersifat stateless by design, sehingga sulit di-_rotate_ atau dideteksi pemakaian
@@ -110,64 +118,26 @@ _instant revocation_ bisa terjadi tanpa perlu blacklist token satu-satu.
 
 ### Alur Utama
 
-**1. Register & Verifikasi Email**
-Registrasi membuat user dengan `isEmailVerified: false` dan langsung mengirim kode OTP ke
-email. Token login **belum** diterbitkan pada tahap ini — user wajib verifikasi email
-terlebih dahulu lewat `verify-email/confirm` sebelum bisa login.
+1. **Register & Verifikasi Email** — user dibuat dengan `isEmailVerified: false`, kode OTP
+   langsung dikirim ke email. Token login **belum** diterbitkan sampai email diverifikasi.
+2. **Login (single session enforcement)** — kredensial valid & email terverifikasi memicu
+   `enforceSingleSession`: seluruh refresh token aktif di-_revoke_ dan `tokenVersion`
+   dinaikkan, baru setelah itu token baru diterbitkan untuk device yang login. Device lama
+   otomatis ter-_logout_.
+3. **Akses endpoint terproteksi** — middleware `authenticate` verifikasi signature & masa
+   berlaku JWT, cocokkan `tokenVersion`, dan pastikan token tidak terbit sebelum
+   `passwordChangedAt`.
+4. **Refresh token (rotasi & deteksi reuse)** — token lama diklaim secara atomic lalu
+   ditandai terpakai; kalau token yang sama dicoba dipakai lagi (indikasi pencurian),
+   seluruh `familyId` langsung di-_revoke_ dan user wajib login ulang.
+5. **Logout** — refresh token sesi aktif di-_revoke_, `tokenVersion` dinaikkan sehingga
+   access token yang dipegang client langsung tidak valid.
+6. **Forgot → Reset Password** — tiga langkah (kirim kode → verifikasi kode → reset), diakhiri
+   dengan revoke seluruh refresh token agar semua device wajib login ulang.
+7. **Change Password** — menaikkan `tokenVersion` & revoke sesi lain; device yang sedang
+   dipakai tetap aman karena request ini sendiri membutuhkan access token yang masih valid.
 
-**2. Login — Single Session Enforcement**
-Saat kredensial valid dan email terverifikasi, service memanggil `enforceSingleSession`:
-seluruh refresh token aktif milik user di-_revoke_, dan `tokenVersion` user dinaikkan
-sehingga access token dari device manapun yang masih aktif langsung tidak valid. Barulah
-setelah itu access token dan refresh token yang baru diterbitkan untuk device yang sedang
-login. Hasilnya: login dari device baru otomatis mengeluarkan device lama.
-
-**3. Akses Endpoint Terproteksi**
-Middleware `authenticate` memverifikasi signature & masa berlaku JWT, lalu membandingkan
-`tokenVersion` di token dengan `tokenVersion` user di database, serta memastikan token tidak
-diterbitkan sebelum `passwordChangedAt`. Ketiganya harus lolos sebelum request diteruskan ke
-controller.
-
-**4. Refresh Token — Rotasi & Deteksi Reuse**
-Setiap kali `/auth/refresh` dipanggil:
-
-- Refresh token lama dicari berdasarkan hash-nya, diklaim secara atomic (`usedAt` di-set),
-  lalu ditandai sudah terpakai.
-- Jika token yang sama dicoba dipakai lagi (tanda ciri pencurian token), seluruh token dalam
-  `familyId` yang sama langsung di-_revoke_, memaksa user login ulang dari awal.
-- Token lama digantikan oleh refresh token baru (`parentId` menunjuk ke token sebelumnya),
-  dan access token baru diterbitkan dengan `tokenVersion` yang sudah dinaikkan.
-
-**5. Logout**
-Refresh token milik sesi yang sedang aktif di-_revoke_, dan `tokenVersion` dinaikkan sehingga
-access token yang sedang dipegang client juga langsung tidak valid — tidak perlu menunggu
-masa berlaku 15 menit habis.
-
-**6. Forgot Password → Reset Password**
-Alur tiga langkah (kirim kode → verifikasi kode → reset password) tetap menggunakan
-`resetToken` terpisah yang di-scope dengan `purpose` dan `nonce` sekali pakai. Setelah
-password berhasil direset, seluruh refresh token milik user di-_revoke_, memaksa login ulang
-di semua device.
-
-**7. Change Password (user sudah login)**
-Sama seperti reset password, mengganti password akan menaikkan `tokenVersion` dan
-me-_revoke_ seluruh refresh token — device lain otomatis ter-_logout_, device yang sedang
-dipakai tetap aman karena request ini sendiri butuh access token yang masih valid.
-
-## Environment Variables
-
-| Variable                             | Keterangan                                              |
-| ------------------------------------ | ------------------------------------------------------- |
-| `JWT_ACCESS_SECRET`                  | Secret untuk sign access token (JWT)                    |
-| `JWT_ACCESS_EXPIRES`                 | Masa berlaku access token (default `15m`)               |
-| `JWT_REFRESH_EXPIRES`                | Referensi masa berlaku refresh token web (default `7d`) |
-| `JWT_RESET_SECRET`                   | Secret khusus untuk `resetToken` forgot-password        |
-| `JWT_RESET_EXPIRES`                  | Masa berlaku `resetToken` (default `10m`)               |
-| `OTP_LENGTH` / `OTP_EXPIRES_MINUTES` | Konfigurasi kode OTP verifikasi email & reset password  |
-| `OTP_RESEND_COOLDOWN_SECONDS`        | Cooldown sebelum OTP boleh dikirim ulang (default `60`) |
-| `OTP_MAX_ATTEMPTS`                   | Batas percobaan input kode OTP sebelum diblok           |
-
-## API Endpoints — Auth
+### Endpoint
 
 Base path: `/api/v1/auth`
 
@@ -176,7 +146,7 @@ Base path: `/api/v1/auth`
 | POST   | `/register`                    | –    | Registrasi user, mengirim kode verifikasi email                 |
 | POST   | `/verify-email/send`           | –    | Kirim / kirim ulang kode verifikasi email                       |
 | POST   | `/verify-email/confirm`        | –    | Konfirmasi kode verifikasi email                                |
-| POST   | `/login`                       | –    | Login; me-_revoke_ sesi lama, menerbitkan token baru            |
+| POST   | `/login`                       | –    | Login; revoke sesi lama, terbitkan token baru                   |
 | POST   | `/refresh`                     | –    | Rotasi refresh token, terbitkan access token baru               |
 | POST   | `/logout`                      | –    | Revoke sesi & invalidasi access token saat ini                  |
 | GET    | `/me`                          | Ya   | Ambil data user yang sedang login                               |
@@ -184,6 +154,159 @@ Base path: `/api/v1/auth`
 | POST   | `/forgot-password`             | –    | Kirim kode reset password (silent terhadap email tak terdaftar) |
 | POST   | `/forgot-password/verify-code` | –    | Verifikasi kode, terbitkan `resetToken`                         |
 | POST   | `/reset-password`              | –    | Reset password menggunakan `resetToken`                         |
+
+---
+
+## Modul: Inventory
+
+Mengelola stok bahan baku milik masing-masing user. Setiap item inventory punya periode
+kevalidan (`validFrom`–`validTo`) dan `unitCost` yang merepresentasikan **total biaya per
+batch pembelian** (bukan harga per unit) — harga per unit dihitung on-the-fly sebagai
+`unitCost / quantity` saat dibutuhkan oleh modul Menu maupun Sales.
+
+### Alur Utama
+
+- **Create** — validasi field (`unit` harus salah satu dari `gram/kg/ml/liter/pcs/piece`,
+  `validTo` > `validFrom`), cek duplikat nama bahan per user, lalu simpan.
+- **Update** — partial update, `validTo` tetap divalidasi terhadap `validFrom` bila keduanya
+  dikirim.
+- **Delete** — ditolak (`409`) apabila item masih dipakai sebagai ingredient di salah satu
+  Menu, untuk menjaga integritas perhitungan harga pokok.
+- **Options** — endpoint ringkas untuk kebutuhan dropdown di frontend.
+
+### Endpoint
+
+Base path: `/api/v1/inventory`
+
+| Method | Endpoint   | Auth | Deskripsi                                       |
+| ------ | ---------- | ---- | ----------------------------------------------- |
+| GET    | `/`        | Ya   | List inventory (pagination, search, sort)       |
+| GET    | `/options` | Ya   | Daftar ringkas untuk dropdown                   |
+| GET    | `/:id`     | Ya   | Detail item inventory                           |
+| POST   | `/`        | Ya   | Tambah item inventory baru                      |
+| PATCH  | `/:id`     | Ya   | Update sebagian field item inventory            |
+| DELETE | `/:id`     | Ya   | Hapus item (ditolak jika masih dipakai di Menu) |
+
+---
+
+## Modul: Menu
+
+Menu terdiri dari daftar _ingredient_ yang menunjuk ke Inventory milik user yang sama.
+Harga pokok (`costPrice`) dan laba (`profit`) dihitung secara konsisten lewat satu _single
+source of truth_ (`utils/menuPricing.js`), dipakai ulang baik saat menampilkan detail menu
+maupun saat transaksi penjualan dicatat.
+
+### Alur Utama
+
+- **Create/Update** — validasi tiap ingredient (`inventoryId` valid, tidak duplikat dalam
+  satu payload, milik user yang sama), lalu simpan `Menu` + `MenuIngredient` dalam satu
+  transaction (atomic).
+- **Detail/List** — mengembalikan menu berikut `costPrice` dan `profit` yang dihitung dari
+  harga per unit tiap ingredient dikalikan `quantityNeeded`.
+- **Delete** — ditolak (`409`) apabila menu masih direferensikan oleh salah satu Production
+  Plan.
+
+### Endpoint
+
+Base path: `/api/v1/menu`
+
+| Method | Endpoint | Auth | Deskripsi                                            |
+| ------ | -------- | ---- | ---------------------------------------------------- |
+| GET    | `/`      | Ya   | List menu (pagination, search, sort)                 |
+| GET    | `/:id`   | Ya   | Detail menu + `costPrice` & `profit`                 |
+| POST   | `/`      | Ya   | Buat menu baru beserta ingredient-nya                |
+| PUT    | `/:id`   | Ya   | Update menu & daftar ingredient                      |
+| DELETE | `/:id`   | Ya   | Hapus menu (ditolak jika dipakai di Production Plan) |
+
+---
+
+## Modul: Production Plan (Planning)
+
+Merencanakan produksi untuk periode tertentu dengan menentukan menu apa saja beserta
+jumlahnya, lalu menghitung total kebutuhan bahan baku secara agregat di seluruh menu dalam
+plan tersebut.
+
+### Alur Utama
+
+- **Create** — validasi tidak ada `menuId` duplikat, pastikan seluruh menu milik user, lalu
+  simpan `Planning` + `PlanningItem` dalam satu transaction.
+- **Detail** — mengagregasi kebutuhan tiap bahan baku lintas menu (`materialCalculation.
+service.js`), membandingkan `needed` vs `available`, dan menandai status **CUKUP**/**KURANG**
+  per bahan berikut rincian menu mana saja yang berkontribusi terhadap kebutuhan tersebut.
+- **Delete** — menghapus `Planning` beserta seluruh `PlanningItem` terkait dalam transaction.
+
+### Endpoint
+
+Base path: `/api/v1/planning`
+
+| Method | Endpoint | Auth | Deskripsi                                                  |
+| ------ | -------- | ---- | ---------------------------------------------------------- |
+| POST   | `/`      | Ya   | Buat production plan baru                                  |
+| GET    | `/`      | Ya   | List seluruh plan milik user                               |
+| GET    | `/:id`   | Ya   | Detail plan + agregasi kebutuhan bahan baku (CUKUP/KURANG) |
+| DELETE | `/:id`   | Ya   | Hapus plan beserta seluruh item di dalamnya                |
+
+---
+
+## Modul: Sales
+
+Mencatat transaksi penjualan sekaligus memotong stok inventory secara atomik dan menyimpan
+_snapshot_ harga & nama menu pada saat transaksi terjadi — sehingga riwayat penjualan tetap
+akurat meskipun menu-nya diedit atau dihapus di kemudian hari.
+
+### Alur Utama
+
+1. Ambil pricing (`sellingPrice`, `costPrice`) untuk seluruh `menuId` dalam transaksi.
+2. Hitung total kebutuhan tiap bahan baku secara agregat lintas item.
+3. Potong stok per `inventoryId` secara atomik (filter query menyertakan `quantity >=
+amount`); jika salah satu bahan tidak cukup, seluruh pengurangan stok yang sudah terjadi
+   di-_rollback_ dan request ditolak (`409`).
+4. Simpan `Sale`, `SaleItem` (snapshot harga & nama), dan `StockMovement` (audit trail
+   `quantityBefore`/`quantityAfter`) sebagai satu kesatuan.
+
+### Endpoint
+
+Base path: `/api/v1/sales`
+
+| Method | Endpoint | Auth | Deskripsi                                                 |
+| ------ | -------- | ---- | --------------------------------------------------------- |
+| GET    | `/`      | Ya   | List transaksi (filter tanggal, pagination, sort)         |
+| GET    | `/:id`   | Ya   | Detail transaksi + item & stock movement terkait          |
+| POST   | `/`      | Ya   | Catat transaksi baru, potong stok inventory secara atomik |
+
+---
+
+## Modul: Dashboard
+
+Menyediakan ringkasan metrik lintas modul (penjualan, kondisi stok, dan plan aktif) dalam
+satu endpoint untuk kebutuhan halaman utama aplikasi.
+
+### Endpoint
+
+Base path: `/api/v1/dashboard`
+
+| Method | Endpoint   | Auth | Deskripsi                                          |
+| ------ | ---------- | ---- | -------------------------------------------------- |
+| GET    | `/summary` | Ya   | Ringkasan metrik dashboard (sales, stok, planning) |
+
+---
+
+## Environment Variables
+
+| Variable                                   | Keterangan                                              |
+| ------------------------------------------ | ------------------------------------------------------- |
+| `NODE_ENV`                                 | `development` / `production` / `test`                   |
+| `PORT`                                     | Port server (default `5000`)                            |
+| `CLIENT_URL`                               | Origin frontend untuk konfigurasi CORS                  |
+| `MONGO_URI`                                | Connection string MongoDB                               |
+| `JWT_ACCESS_SECRET` / `JWT_ACCESS_EXPIRES` | Secret & masa berlaku access token (default `15m`)      |
+| `JWT_REFRESH_EXPIRES`                      | Referensi masa berlaku refresh token web (default `7d`) |
+| `JWT_RESET_SECRET` / `JWT_RESET_EXPIRES`   | Secret & masa berlaku `resetToken` (default `10m`)      |
+| `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX`  | Konfigurasi rate limiter global                         |
+| `BREVO_API_KEY` / `SMTP_USER`              | Kredensial pengiriman email transaksional (Brevo)       |
+| `OTP_LENGTH` / `OTP_EXPIRES_MINUTES`       | Konfigurasi kode OTP verifikasi email & reset password  |
+| `OTP_RESEND_COOLDOWN_SECONDS`              | Cooldown sebelum OTP boleh dikirim ulang (default `60`) |
+| `OTP_MAX_ATTEMPTS`                         | Batas percobaan input kode OTP sebelum diblok           |
 
 ## Menjalankan Proyek
 
@@ -201,19 +324,8 @@ npm run dev
 npm test
 ```
 
-## Roadmap
-
-Modul berikut akan didokumentasikan menyusul seiring fitur ditambahkan kembali secara
-bertahap ke base code baru:
-
-- [ ] Inventory
-- [ ] Menu
-- [ ] Production Plan
-- [ ] Selling
-- [ ] Plan Report
-
 ---
 
 <div align="center">
-<sub>Dibangun oleh 505-Kada-Team — Capstone MERN Stack</sub>
+<sub>Dibangun oleh 505-Kada-Team MERN Stack</sub>
 </div>
